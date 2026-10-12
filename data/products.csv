@@ -1,0 +1,11 @@
+product_id,product_name,category
+P001,Laptop,Electronics
+P002,Mouse,Accessories
+P003,Keyboard,Accessories
+P004,Monitor,Electronics
+P005,Headphones,Audio
+P006,Smartphone,Electronics
+P007,Tablet,Electronics
+P008,Printer,Office
+P009,Webcam,Accessories
+P010,Chair,Furniture
