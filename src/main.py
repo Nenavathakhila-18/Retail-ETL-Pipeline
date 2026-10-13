@@ -1,37 +1,47 @@
 import logging
+from pathlib import Path
+
 from src.extract.extract import extract_data
 from src.validate.validate import validate_orders
 from src.transform.transform import transform_orders
 from src.load.load import save_to_csv
+
+from src.database.db_services import load_transformed_data
 
 from src.reports.reports import (
     create_customer_summary,
     create_product_summary,
     create_city_summary,
     create_category_summary,
-    create_daily_sales
+    create_daily_sales,
 )
 
 from src.visualization.graphs import create_graphs
 
 
 # -------------------------------------------------
-# LOGGING CONFIGURATION
+# PATHS AND LOGGING CONFIGURATION
 # -------------------------------------------------
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_DIR = BASE_DIR / "output"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
-    filename="logs/retail_etl.log",
+    filename=str(LOG_DIR / "retail_etl.log"),
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
 logger = logging.getLogger(__name__)
 
 
 def run_pipeline():
-    """
-    Run the complete retail ETL pipeline.
-    """
+    """Run the complete Retail ETL pipeline."""
 
     print("\n==============================")
     print("STARTING RETAIL ETL PIPELINE")
@@ -40,7 +50,6 @@ def run_pipeline():
     logger.info("Retail ETL pipeline started")
 
     try:
-
         # -------------------------------------------------
         # 1. EXTRACT
         # -------------------------------------------------
@@ -50,15 +59,16 @@ def run_pipeline():
 
         customers, products, orders = extract_data()
 
+        print(f"Customers extracted: {len(customers)}")
+        print(f"Products extracted: {len(products)}")
+        print(f"Orders extracted: {len(orders)}")
+
         logger.info(
-            "Extraction completed successfully. "
-            "Customers: %d, Products: %d, Orders: %d",
+            "Extraction completed. Customers: %d, Products: %d, Orders: %d",
             len(customers),
             len(products),
-            len(orders)
+            len(orders),
         )
-
-        print("Extraction completed successfully.")
 
         # -------------------------------------------------
         # 2. VALIDATE
@@ -70,20 +80,19 @@ def run_pipeline():
         valid_orders, rejected_orders = validate_orders(
             orders,
             customers,
-            products
-        )
-
-        logger.info(
-            "Validation completed. "
-            "Total: %d, Valid: %d, Rejected: %d",
-            len(orders),
-            len(valid_orders),
-            len(rejected_orders)
+            products,
         )
 
         print(f"Total orders: {len(orders)}")
         print(f"Valid orders: {len(valid_orders)}")
         print(f"Rejected orders: {len(rejected_orders)}")
+
+        logger.info(
+            "Validation completed. Total: %d, Valid: %d, Rejected: %d",
+            len(orders),
+            len(valid_orders),
+            len(rejected_orders),
+        )
 
         # -------------------------------------------------
         # 3. TRANSFORM
@@ -95,17 +104,14 @@ def run_pipeline():
         transformed_orders = transform_orders(
             valid_orders,
             customers,
-            products
+            products,
         )
+
+        print(f"Transformed orders: {len(transformed_orders)}")
 
         logger.info(
             "Transformation completed. Rows: %d",
-            len(transformed_orders)
-        )
-
-        print(
-            f"Transformation completed. "
-            f"Rows: {len(transformed_orders)}"
+            len(transformed_orders),
         )
 
         # -------------------------------------------------
@@ -113,19 +119,35 @@ def run_pipeline():
         # -------------------------------------------------
 
         print("\n[4] LOAD")
-        logger.info("Starting data loading")
+        logger.info("Starting CSV and database loading")
 
+        # Save valid and rejected orders as CSV files.
         save_to_csv(
             transformed_orders,
-            "output/valid_orders.csv"
+            str(OUTPUT_DIR / "valid_orders.csv"),
         )
 
         save_to_csv(
             rejected_orders,
-            "output/rejected_orders.csv"
+            str(OUTPUT_DIR / "rejected_orders.csv"),
         )
 
-        logger.info("Valid and rejected orders saved successfully")
+        print("Valid and rejected orders saved to CSV.")
+
+        # Insert/update database records using SQLAlchemy ORM.
+        # Customers and products are loaded before orders
+        # because orders reference them through foreign keys.
+        load_transformed_data(
+            customers,
+            products,
+            transformed_orders,
+        )
+
+        print("Customers loaded into the database.")
+        print("Products loaded into the database.")
+        print("Orders loaded into the database.")
+
+        logger.info("Database loading completed successfully")
 
         # -------------------------------------------------
         # 5. REPORTING
@@ -159,34 +181,34 @@ def run_pipeline():
         # -------------------------------------------------
 
         print("\n[6] SAVE REPORTS")
-        logger.info("Saving generated reports")
+        logger.info("Saving reports")
 
         save_to_csv(
             customer_summary,
-            "output/customer_summary.csv"
+            str(OUTPUT_DIR / "customer_summary.csv"),
         )
 
         save_to_csv(
             product_summary,
-            "output/product_summary.csv"
+            str(OUTPUT_DIR / "product_summary.csv"),
         )
 
         save_to_csv(
             city_summary,
-            "output/city_summary.csv"
+            str(OUTPUT_DIR / "city_summary.csv"),
         )
 
         save_to_csv(
             category_summary,
-            "output/category_summary.csv"
+            str(OUTPUT_DIR / "category_summary.csv"),
         )
 
         save_to_csv(
             daily_sales,
-            "output/daily_sales.csv"
+            str(OUTPUT_DIR / "daily_sales.csv"),
         )
 
-        logger.info("All reports generated successfully")
+        print("All reports saved successfully.")
 
         # -------------------------------------------------
         # 7. VISUALIZATION
@@ -197,9 +219,8 @@ def run_pipeline():
 
         create_graphs()
 
-        logger.info("Graphs generated successfully")
-
         print("Graphs generated successfully.")
+        logger.info("Graphs generated successfully")
 
         # -------------------------------------------------
         # PIPELINE COMPLETED
@@ -209,22 +230,14 @@ def run_pipeline():
         print("ETL PIPELINE COMPLETED")
         print("==============================")
 
-        logger.info(
-            "Retail ETL pipeline completed successfully"
-        )
+        logger.info("Retail ETL pipeline completed successfully")
 
     except Exception as e:
-
-        logger.error(
-            "ETL pipeline failed: %s",
-            e,
-            exc_info=True
-        )
+        logger.exception("Retail ETL pipeline failed: %s", e)
 
         print("\n==============================")
         print("ETL PIPELINE FAILED")
         print("==============================")
-
         print(f"Error: {e}")
 
         raise
